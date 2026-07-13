@@ -1,31 +1,13 @@
 from fastapi import FastAPI
 
-app = FastAPI()
+from app.api.posts import router as post_router
+
+app = FastAPI(title="Post Service API")
 
 
 @app.get("/")
 def home():
-    return {"message": "Welcome to my API"}
+    return {"message": "Post Service API is Running 🚀"}
 
 
-@app.get("/about")
-def about():
-    return {
-        "name": "Pranjal",
-        "course": "B.Tech CSE AI & ML"
-    }
-
-
-@app.get("/contact")
-def contact():
-    return {
-        "email": "pranjal@example.com"
-    }
-
-
-@app.get("/college")
-def college():
-    return {
-        "college": "UPES",
-        "city": "Dehradun"
-    }
+app.include_router(post_router)

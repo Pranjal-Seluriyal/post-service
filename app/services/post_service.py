@@ -1,41 +1,54 @@
-from app.database.fake_db import posts
+from sqlalchemy.orm import Session
+
+from app.models.post import Post
+from app.schemas.post import PostCreate
 
 
-def get_all_posts():
-    return posts
+def get_all_posts(db: Session):
+    return db.query(Post).all()
 
 
-def get_post_by_id(post_id: int):
-    for post in posts:
-        if post["id"] == post_id:
-            return post
-    return None
+def get_post_by_id(db: Session, post_id: int):
+    return db.query(Post).filter(Post.id == post_id).first()
 
 
-def create_post(post):
-    post_dict = post.model_dump()
-    post_dict["id"] = len(posts) + 1
+def create_post(db: Session, post: PostCreate):
+    db_post = Post(
+        title=post.title,
+        content=post.content,
+        author=post.author,
+    )
 
-    posts.append(post_dict)
+    db.add(db_post)
+    db.commit()
+    db.refresh(db_post)
 
-    return post_dict
-
-
-def update_post(post_id: int, updated_post):
-    for index, post in enumerate(posts):
-        if post["id"] == post_id:
-            updated_dict = updated_post.model_dump()
-            updated_dict["id"] = post_id
-            posts[index] = updated_dict
-            return updated_dict
-
-    return None
+    return db_post
 
 
-def delete_post(post_id: int):
-    for index, post in enumerate(posts):
-        if post["id"] == post_id:
-            deleted = posts.pop(index)
-            return deleted
+def update_post(db: Session, post_id: int, post: PostCreate):
+    db_post = db.query(Post).filter(Post.id == post_id).first()
 
-    return None
+    if db_post is None:
+        return None
+
+    db_post.title = post.title
+    db_post.content = post.content
+    db_post.author = post.author
+
+    db.commit()
+    db.refresh(db_post)
+
+    return db_post
+
+
+def delete_post(db: Session, post_id: int):
+    db_post = db.query(Post).filter(Post.id == post_id).first()
+
+    if db_post is None:
+        return None
+
+    db.delete(db_post)
+    db.commit()
+
+    return db_post

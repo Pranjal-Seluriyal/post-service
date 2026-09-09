@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database.database import get_db
@@ -23,16 +24,11 @@ router = APIRouter(
 )
 
 
-# @router.get("/", response_model=list[PostResponse])
-# def read_posts(
-#     db: Session = Depends(get_db),
-# ):
-#     return get_all_posts(db)
-@router.get("/", response_model=list[PostResponse])
+@router.get("/", response_model=List[PostResponse])
 def read_posts(
-    search: str = "",
-    page: int = 1,
-    limit: int = 10,
+    search: str = Query("", description="Search term for post title or content"),
+    page: int = Query(1, ge=1, description="Page number starting from 1"),
+    limit: int = Query(10, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
 ):
     return get_all_posts(
@@ -52,23 +48,23 @@ def read_post(
 
     if post is None:
         raise HTTPException(
-            status_code=404,
-            detail="Post not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Post with ID {post_id} not found",
         )
 
     return post
 
 
-@router.post("/", response_model=PostResponse)
+@router.post("/", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
 def add_post(
     post: PostCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     return create_post(
-        db,
-        post,
-        current_user,
+        db=db,
+        post=post,
+        current_user=current_user,
     )
 
 
@@ -80,21 +76,21 @@ def edit_post(
     current_user: User = Depends(get_current_user),
 ):
     updated = update_post(
-        db,
-        post_id,
-        post,
-        current_user,
+        db=db,
+        post_id=post_id,
+        post=post,
+        current_user=current_user,
     )
 
     if updated is None:
         raise HTTPException(
-            status_code=404,
-            detail="Post not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Post with ID {post_id} not found",
         )
 
     if updated == "forbidden":
         raise HTTPException(
-            status_code=403,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="You can edit only your own posts",
         )
 
@@ -108,20 +104,20 @@ def remove_post(
     current_user: User = Depends(get_current_user),
 ):
     deleted = delete_post(
-        db,
-        post_id,
-        current_user,
+        db=db,
+        post_id=post_id,
+        current_user=current_user,
     )
 
     if deleted is None:
         raise HTTPException(
-            status_code=404,
-            detail="Post not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Post with ID {post_id} not found",
         )
 
     if deleted == "forbidden":
         raise HTTPException(
-            status_code=403,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="You can delete only your own posts",
         )
 

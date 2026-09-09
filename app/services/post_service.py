@@ -1,99 +1,100 @@
+import re
+from typing import List, Optional, Tuple, Union
 from sqlalchemy.orm import Session
 
-from app.models.post import Post
-from app.models.user import User
+from app.models.post import Post, PostStatus, PostVisibility
 from app.schemas.post import PostCreate, PostUpdate
+from app.repositories.post_repository import PostRepository
+from app.repositories.hashtag_repository import HashtagRepository
 
-from sqlalchemy import or_
+
+def extract_hashtags(text: str) -> List[str]:
+    if not text:
+        return []
+    return re.findall(r"#(\w+)", text)
+
+
+def extract_mentions(text: str) -> List[str]:
+    if not text:
+        return []
+    return re.findall(r"@(\w+)", text)
+
+
+def create_post(db: Session, post_data: PostCreate, author_id: int) -> Post:
+    repo = PostRepository(db)
+    post = repo.create(post_data=post_data, author_id=author_id)
+
+    # Extract and store hashtags if caption present
+    if post_data.caption:
+        tags = extract_hashtags(post_data.caption)
+        if tags:
+            hashtag_repo = HashtagRepository(db)
+            hashtag_repo.link_post_to_hashtags(post, tags)
+
+    return post
+
+
+def get_post_by_id(db: Session, post_id: int) -> Optional[Post]:
+    repo = PostRepository(db)
+    return repo.get_by_id(post_id)
+
 
 def get_all_posts(
     db: Session,
+    author_id: Optional[int] = None,
     search: str = "",
+    visibility: Optional[PostVisibility] = None,
     page: int = 1,
     limit: int = 10,
-):
-    query = db.query(Post)
-
-    if search:
-        query = query.filter(
-            or_(
-                Post.title.ilike(f"%{search}%"),
-                Post.content.ilike(f"%{search}%"),
-            )
-        )
-
-    return (
-        query.order_by(Post.id.desc())
-        .offset((page - 1) * limit)
-        .limit(limit)
-        .all()
+) -> Tuple[List[Post], int]:
+    repo = PostRepository(db)
+    return repo.get_all(
+        author_id=author_id,
+        search=search,
+        visibility=visibility,
+        page=page,
+        limit=limit,
     )
-# def get_all_posts(db: Session):
-#     return db.query(Post).order_by(Post.id.desc()).all()
-
-
-def get_post_by_id(db: Session, post_id: int):
-    return db.query(Post).filter(Post.id == post_id).first()
-
-
-def create_post(
-    db: Session,
-    post: PostCreate,
-    current_user: User,
-):
-    db_post = Post(
-        title=post.title,
-        content=post.content,
-        author_id=current_user.id,
-    )
-
-    db.add(db_post)
-    db.commit()
-    db.refresh(db_post)
-
-    return db_post
 
 
 def update_post(
     db: Session,
     post_id: int,
-    post: PostUpdate,
-    current_user: User,
-):
-    db_post = db.query(Post).filter(Post.id == post_id).first()
+    post_data: PostUpdate,
+    current_user_id: int,
+) -> Union[Post, str, None]:
+    repo = PostRepository(db)
+    post = repo.get_by_id(post_id, include_non_active=True)
 
-    if db_post is None:
+    if post is None or post.status == PostStatus.DELETED:
         return None
 
-    if db_post.author_id != current_user.id:
+    if post.author_id != current_user_id:
         return "forbidden"
 
-    if post.title is not None:
-        db_post.title = post.title
+    updated = repo.update(post, post_data)
 
-    if post.content is not None:
-        db_post.content = post.content
+    # Re-extract hashtags if caption updated
+    if post_data.caption is not None:
+        tags = extract_hashtags(post_data.caption)
+        hashtag_repo = HashtagRepository(db)
+        hashtag_repo.link_post_to_hashtags(updated, tags)
 
-    db.commit()
-    db.refresh(db_post)
-
-    return db_post
+    return updated
 
 
 def delete_post(
     db: Session,
     post_id: int,
-    current_user: User,
-):
-    db_post = db.query(Post).filter(Post.id == post_id).first()
+    current_user_id: int,
+) -> Union[bool, str, None]:
+    repo = PostRepository(db)
+    post = repo.get_by_id(post_id, include_non_active=True)
 
-    if db_post is None:
+    if post is None or post.status == PostStatus.DELETED:
         return None
 
-    if db_post.author_id != current_user.id:
+    if post.author_id != current_user_id:
         return "forbidden"
 
-    db.delete(db_post)
-    db.commit()
-
-    return True
+    return repo.delete(post, soft_delete=True)

@@ -1,72 +1,68 @@
+from typing import Union
 from sqlalchemy.orm import Session
 
-from app.models.like import Like
-from app.models.post import Post
-from app.models.user import User
+from app.models.post import PostStatus
+from app.repositories.like_repository import LikeRepository
+from app.repositories.post_repository import PostRepository
 
 
 def like_post(
     db: Session,
     post_id: int,
-    current_user: User,
-):
-    post = db.query(Post).filter(Post.id == post_id).first()
+    user_id: int,
+) -> Union[bool, str, None]:
+    post_repo = PostRepository(db)
+    post = post_repo.get_by_id(post_id)
 
-    if post is None:
+    if post is None or post.status != PostStatus.ACTIVE:
         return None
 
-    existing = (
-        db.query(Like)
-        .filter(
-            Like.user_id == current_user.id,
-            Like.post_id == post_id,
-        )
-        .first()
-    )
-
+    like_repo = LikeRepository(db)
+    existing = like_repo.get_like(post_id=post_id, user_id=user_id)
     if existing:
-        return "already"
+        return "already_liked"
 
-    like = Like(
-        user_id=current_user.id,
-        post_id=post_id,
-    )
+    try:
+        # Atomic Transaction: Create like + increment counter in a single transaction boundary
+        like = like_repo.create(post_id=post_id, user_id=user_id, commit=False)
+        if not like:
+            db.rollback()
+            return "already_liked"
 
-    db.add(like)
-    db.commit()
-
-    return True
+        post_repo.increment_counter(post_id, "like_count", delta=1, commit=False)
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
 
 
 def unlike_post(
     db: Session,
     post_id: int,
-    current_user: User,
-):
-    like = (
-        db.query(Like)
-        .filter(
-            Like.user_id == current_user.id,
-            Like.post_id == post_id,
-        )
-        .first()
-    )
+    user_id: int,
+) -> Union[bool, None]:
+    like_repo = LikeRepository(db)
+    like = like_repo.get_like(post_id=post_id, user_id=user_id)
 
     if like is None:
         return None
 
-    db.delete(like)
-    db.commit()
+    try:
+        # Atomic Transaction: Delete like + decrement counter in a single transaction boundary
+        like_repo.delete(like, commit=False)
+        post_repo = PostRepository(db)
+        post_repo.increment_counter(post_id, "like_count", delta=-1, commit=False)
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
 
-    return True
 
-
-def like_count(
+def get_like_count(
     db: Session,
     post_id: int,
-):
-    return (
-        db.query(Like)
-        .filter(Like.post_id == post_id)
-        .count()
-    )
+) -> int:
+    like_repo = LikeRepository(db)
+    return like_repo.count_by_post_id(post_id)

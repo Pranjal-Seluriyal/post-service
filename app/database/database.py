@@ -1,12 +1,14 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = "sqlite:///./post.db"
+from app.core.config import settings
+
+db_url = settings.get_database_url()
 
 engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    db_url,
+    connect_args={"check_same_thread": False} if db_url.startswith("sqlite") else {},
+    pool_pre_ping=True,
 )
 
 SessionLocal = sessionmaker(
@@ -24,5 +26,3 @@ def get_db():
         yield db
     finally:
         db.close()
-
-

@@ -1,12 +1,15 @@
-from sqlalchemy import Column, Integer, String
+# Note: In accordance with microservice database boundaries, 
+# Post Service does NOT own or maintain a local 'users' database table.
+# User identities are established via JWT tokens and integrated via API boundaries.
 
-from app.database.database import Base
+from pydantic import BaseModel
 
 
-class User(Base):
-    __tablename__ = "users"
+class User(BaseModel):
+    id: int
+    username: str
+    email: str
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
+    model_config = {
+        "from_attributes": True
+    }
